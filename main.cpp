@@ -17,10 +17,12 @@ public:
     }
 private:
     void initWindow();
+    void initVulkan();
     void mainLoop();
     void cleanup();
 protected:
     GLFWwindow* window = nullptr;
+    VkInstance instance = nullptr; 
 public:
     bool framebufferResized = false;
 };
@@ -36,9 +38,38 @@ void VulkanApplication::initWindow()
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "HelloVulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+}
+
+void VulkanApplication::initVulkan()
+{
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "HelloVulkan";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "No Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    createInfo.enabledExtensionCount = glfwExtensionCount;
+    createInfo.ppEnabledExtensionNames = glfwExtensions;
+
+    createInfo.enabledLayerCount = 0;
+
+    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create instance!");
+    }
+
 }
 
 void VulkanApplication::mainLoop() {
@@ -50,6 +81,8 @@ void VulkanApplication::mainLoop() {
 
 void VulkanApplication::cleanup()
 {
+    vkDestroyInstance(instance, nullptr);
+
     glfwDestroyWindow(window);
     glfwTerminate();
 }
