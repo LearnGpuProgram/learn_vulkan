@@ -20,11 +20,16 @@ private:
 	int numFrames;
 	GLFWwindow* window{ nullptr };
 	vk::Instance instance{ nullptr };
+	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
+	vk::DispatchLoaderDynamic dynamicloader;
 	std::string title{ "VulkanDemo" };
 	double lastTime;
 	double currentTime;
 private:
 	void createWindow();
 	void createInstance();
+	void createValidation();
+private:
 	void calculateFrameRate();
+	bool checkValidationLayerSupport(const std::vector<const char*>& validationLayers);
 };

@@ -14,6 +14,7 @@ Application::Application()
 
 	createWindow();
 	createInstance();
+	createValidation();
 }
 
 void Application::createWindow()
@@ -43,7 +44,7 @@ void Application::createInstance()
 	std::cout << "Makeing an instance... \n";
 #endif
 
-	uint32_t version{ 0 };
+	uint32_t version{ VK_API_VERSION_1_0 };
 	vkEnumerateInstanceVersion(&version);
 
 #ifdef DEBUG_MODE
@@ -76,16 +77,39 @@ void Application::createInstance()
 	{
 		std::cout << "\t\"" << extensionName << "\"\n";
 	}
+#endif
+
+#ifdef DEBUG_MODE
+	const std::vector<const char*> validationLayers = {
+		 "VK_LAYER_KHRONOS_validation"
+	};
+
+	extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif 
 
-	vk::InstanceCreateInfo createInfo = vk::InstanceCreateInfo(
-		vk::InstanceCreateFlags(),
-		&appInfo,
-		0,
-		nullptr,//enable layers 
-		static_cast<uint32_t>(extensions.size()),
-		extensions.data() //enable extensions 
-	);
+#ifdef DEBUG_MODE
+	if (!checkValidationLayerSupport(validationLayers)) {
+		throw std::runtime_error("Validation layers requested, but not available!");
+	}
+	else
+	{
+		std::cout << "Validation layers are available!\n";
+	}
+#endif
+
+	// ÌîÐ´ createInfo
+	vk::InstanceCreateInfo createInfo{};
+	createInfo.sType = vk::StructureType::eInstanceCreateInfo;
+	createInfo.pApplicationInfo = &appInfo;
+#ifdef DEBUG_MODE
+	createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+	createInfo.ppEnabledLayerNames = validationLayers.data();
+#else
+	createInfo.enabledLayerCount = 0;
+	createInfo.ppEnabledLayerNames = nullptr;
+#endif
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+	createInfo.ppEnabledExtensionNames = extensions.data();
 
 	try
 	{
@@ -99,6 +123,62 @@ void Application::createInstance()
 #endif 
 	}
 }
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT messageType,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void* pUserData)
+{
+	std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+	return VK_FALSE;
+}
+
+void Application::createValidation()
+{
+#ifdef DEBUG_MODE	
+	dynamicloader = vk::DispatchLoaderDynamic(instance, vkGetInstanceProcAddr);
+
+	vk::DebugUtilsMessengerCreateInfoEXT createInfo = vk::DebugUtilsMessengerCreateInfoEXT(
+		vk::DebugUtilsMessengerCreateFlagsEXT(),
+		vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+		vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+		&debugCallback,
+		nullptr
+	);
+
+	debugMessenger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr, dynamicloader);
+
+	if(!debugMessenger)
+	{
+		std::cerr << "Failed to create Debug Utils Messenger!" << std::endl;
+	}
+#endif 
+}
+
+bool Application::checkValidationLayerSupport(const std::vector<const char*>& validationLayers) {
+	uint32_t layerCount;
+	vk::enumerateInstanceLayerProperties(&layerCount, nullptr);
+
+	std::vector<vk::LayerProperties> availableLayers(layerCount);
+	vk::enumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+	for (const char* layerName : validationLayers) {
+		bool layerFound = false;
+		for (const auto& layerProperties : availableLayers) {
+			if (strcmp(layerName, layerProperties.layerName) == 0) {
+				layerFound = true;
+				break;
+			}
+		}
+		if (!layerFound) {
+			std::cout << "Validation layer not found: " << layerName << "\n";
+			return false;
+		}
+	}
+	return true;
+}
+
 
 void Application::update()
 {
@@ -134,7 +214,7 @@ void Application::calculateFrameRate()
 		glfwSetWindowTitle(window, sstitle.str().c_str());
 		lastTime = currentTime;
 		numFrames = -1;
-		frameTime = float(1000.0 / frameTime);
+		frameTime = float(1000.0 / framerate);
 	}
 	++numFrames;
 }
@@ -143,6 +223,8 @@ Application::~Application()
 {
 #ifdef DEBUG_MODE
 	std::cout << "Destroy a graphics Application!\n";
+
+	instance.destroyDebugUtilsMessengerEXT(debugMessenger, nullptr, dynamicloader);
 #endif
 
 	instance.destroy();
