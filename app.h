@@ -19,10 +19,12 @@ private:
 	float frameTime;
 	int numFrames;
 	GLFWwindow* window{ nullptr };
+	vk::Instance instance{ nullptr };
 	std::string title{ "VulkanDemo" };
 	double lastTime;
 	double currentTime;
 private:
 	void createWindow();
+	void createInstance();
 	void calculateFrameRate();
 };
