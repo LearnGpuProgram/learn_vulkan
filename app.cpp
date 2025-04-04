@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <optional>
 
 
 Application::Application()
@@ -17,7 +18,8 @@ Application::Application()
 	createWindow();
 	createInstance();
 	createValidation();
-	chooseDevice();
+	choosePhysicalDevice();
+	createLogicalDevice();
 }
 
 void Application::createWindow()
@@ -269,7 +271,7 @@ bool Application::checkDeviceSuitable(const vk::PhysicalDevice& device)
 	return true;
 }
 
-void Application::chooseDevice()
+void Application::choosePhysicalDevice()
 {
 #ifdef DEBUG_MODE
 	std::cout << "Choosing Physical Device \n";
@@ -294,6 +296,89 @@ void Application::chooseDevice()
 			physicalDevice = device;
 			break;
 		}
+	}
+}
+
+struct QueueFamilyIndices
+{
+	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
+
+	bool isComplete()
+	{
+		return graphicsFamily.has_value() && presentFamily.has_value();
+	}
+};
+
+void Application::findQueueFamilies(const vk::PhysicalDevice& device, QueueFamilyIndices& indices)
+{
+	std::vector<vk::QueueFamilyProperties> queueFamilies = device.getQueueFamilyProperties();
+
+#ifdef DEBUG_MODE
+	std::cout << "There are " << queueFamilies.size() << " queue families available on the system.\n";
+#endif
+
+	int i = 0;
+	for (const vk::QueueFamilyProperties& queueFamily : queueFamilies)
+	{
+		if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
+			indices.graphicsFamily = i;
+			indices.presentFamily = i;
+
+#ifdef DEBUG_MODE
+			std::cout << "Queue Family " << i << " is suitable for graphics and presenting\n";
+#endif
+		}
+
+		if (indices.isComplete()) {
+			break;
+		}
+
+		i++;
+	}
+}
+
+void Application::createLogicalDevice()
+{
+	QueueFamilyIndices indices;
+	findQueueFamilies(physicalDevice, indices);
+
+	float queuePriority = 1.0f;
+
+	vk::DeviceQueueCreateInfo queueCreateInfo = vk::DeviceQueueCreateInfo(
+		vk::DeviceQueueCreateFlags(), indices.graphicsFamily.value(),
+		1, &queuePriority
+	);
+
+	vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures();
+
+	std::vector<const char*> enabledLayers;
+#ifdef DEBUG_MODE
+		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
+#endif
+	vk::DeviceCreateInfo deviceInfo = vk::DeviceCreateInfo(
+		vk::DeviceCreateFlags(),
+		1, &queueCreateInfo,
+		enabledLayers.size(), enabledLayers.data(),
+		0, nullptr,
+		&deviceFeatures
+	);
+
+	try 
+	{
+		logicalDevice = physicalDevice.createDevice(deviceInfo);
+		graphicsQueue = logicalDevice.getQueue(indices.graphicsFamily.value(), 0);
+#ifdef DEBUG_MODE
+		std::cout << "GPU has been successfully abstracted!\n";
+#endif
+	}
+	catch (vk::SystemError err) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Device creation failed!\n";
+#endif // DEBUG_MODE
+		logicalDevice = nullptr;
+		graphicsQueue = nullptr;
 	}
 }
 
@@ -340,7 +425,11 @@ Application::~Application()
 {
 #ifdef DEBUG_MODE
 	std::cout << "Destroy a graphics Application!\n";
+#endif 
 
+	logicalDevice.destroy();
+
+#ifdef DEBUG_MODE
 	instance.destroyDebugUtilsMessengerEXT(debugMessenger, nullptr, dynamicloader);
 #endif
 

@@ -3,6 +3,8 @@
 #include <string>
 #include <vulkan/vulkan.hpp>
 
+struct QueueFamilyIndices;
+
 class Application
 {
 public:
@@ -21,6 +23,8 @@ private:
 	GLFWwindow* window{ nullptr };
 	vk::Instance instance{ nullptr };
 	vk::PhysicalDevice physicalDevice{ nullptr };
+	vk::Device logicalDevice{ nullptr };
+	vk::Queue graphicsQueue{ nullptr };
 	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
 	vk::DispatchLoaderDynamic dynamicloader;
 	std::string title{ "VulkanDemo" };
@@ -30,7 +34,8 @@ private:
 	void createWindow();
 	void createInstance();
 	void createValidation();
-	void chooseDevice();
+	void choosePhysicalDevice();
+	void createLogicalDevice();
 private:
 	void calculateFrameRate();
 	bool checkValidationLayerSupport(const std::vector<const char*>& validationLayers);
@@ -38,4 +43,5 @@ private:
 	bool checkDeviceSuitable(const vk::PhysicalDevice& device);
 	bool checkDeviceExtensionSupport(const vk::PhysicalDevice& device,
 		const std::vector<const char*>& requestedExtensions);
+	void findQueueFamilies(const vk::PhysicalDevice& device, QueueFamilyIndices& indices);
 };
