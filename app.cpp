@@ -2,7 +2,9 @@
 
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <vector>
+#include <set>
 
 
 Application::Application()
@@ -15,6 +17,7 @@ Application::Application()
 	createWindow();
 	createInstance();
 	createValidation();
+	chooseDevice();
 }
 
 void Application::createWindow()
@@ -179,6 +182,120 @@ bool Application::checkValidationLayerSupport(const std::vector<const char*>& va
 	return true;
 }
 
+
+void Application::printDeviceProperties(const vk::PhysicalDevice& device)
+{
+	vk::PhysicalDeviceProperties properties = device.getProperties();
+
+	std::cout << "Device name: " << properties.deviceName << '\n';
+
+	std::cout << "Device type: ";
+	switch (properties.deviceType) {
+
+	case (vk::PhysicalDeviceType::eCpu):
+		std::cout << "CPU\n";
+		break;
+
+	case (vk::PhysicalDeviceType::eDiscreteGpu):
+		std::cout << "Discrete GPU\n";
+		break;
+
+	case (vk::PhysicalDeviceType::eIntegratedGpu):
+		std::cout << "Integrated GPU\n";
+		break;
+
+	case (vk::PhysicalDeviceType::eVirtualGpu):
+		std::cout << "Virtual GPU\n";
+		break;
+
+	default:
+		std::cout << "Other\n";
+	}
+}
+
+bool Application::checkDeviceExtensionSupport(const vk::PhysicalDevice& device,
+	const std::vector<const char*>& requestedExtensions)
+{
+	std::set<std::string> requiredExtensions(requestedExtensions.begin(), requestedExtensions.end());
+
+#ifdef DEBUG_MODE
+	std::cout << "Device can support extensions:\n";
+#endif // DEBUG_MODE
+
+	for (vk::ExtensionProperties& extension : device.enumerateDeviceExtensionProperties()) {
+
+#ifdef DEBUG_MODE
+			std::cout << "\t\"" << extension.extensionName << "\"\n";
+#endif // DEBUG_MODE
+
+		requiredExtensions.erase(extension.extensionName);
+	}
+
+	return requiredExtensions.empty();
+}
+
+bool Application::checkDeviceSuitable(const vk::PhysicalDevice& device)
+{
+#ifdef DEBUG_MODE
+		std::cout << "Checking if device is suitable\n";
+#endif // DEBUG_MODE
+
+	const std::vector<const char*> requestedExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
+#ifdef DEBUG_MODE
+		std::cout << "We are requesting device extensions:\n";
+
+		for (const char* extension : requestedExtensions) {
+			std::cout << "\t\"" << extension << "\"\n";
+		}
+#endif 
+
+	if (bool extensionsSupported = checkDeviceExtensionSupport(device, requestedExtensions)) {
+
+#ifdef DEBUG_MODE
+			std::cout << "Device can support the requested extensions!\n";
+#endif 
+	}
+	else 
+	{
+#ifdef DEBUG_MODE
+			std::cout << "Device can't support the requested extensions!\n";
+#endif 
+
+		return false;
+	}
+	return true;
+}
+
+void Application::chooseDevice()
+{
+#ifdef DEBUG_MODE
+	std::cout << "Choosing Physical Device \n";
+#endif 
+
+	std::vector<vk::PhysicalDevice> availableDevice = instance.enumeratePhysicalDevices();
+
+#ifdef DEBUG_MODE
+	std::cout << "There are " << availableDevice.size() << " physical devices available on this system\n";
+#endif // DEBUG_MODE
+
+	for (vk::PhysicalDevice device : availableDevice)
+	{
+#ifdef DEBUG_MODE
+		printDeviceProperties(device);
+#endif // DEBUG_MODE
+		if (checkDeviceSuitable(device))
+		{
+#ifdef DEBUG_MODE
+			std::cout << "Choosing Physical Device Successful \n";
+#endif 
+			physicalDevice = device;
+			break;
+		}
+	}
+}
 
 void Application::update()
 {

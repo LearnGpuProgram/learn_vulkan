@@ -20,6 +20,7 @@ private:
 	int numFrames;
 	GLFWwindow* window{ nullptr };
 	vk::Instance instance{ nullptr };
+	vk::PhysicalDevice physicalDevice{ nullptr };
 	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
 	vk::DispatchLoaderDynamic dynamicloader;
 	std::string title{ "VulkanDemo" };
@@ -29,7 +30,12 @@ private:
 	void createWindow();
 	void createInstance();
 	void createValidation();
+	void chooseDevice();
 private:
 	void calculateFrameRate();
 	bool checkValidationLayerSupport(const std::vector<const char*>& validationLayers);
+	void printDeviceProperties(const vk::PhysicalDevice& device);
+	bool checkDeviceSuitable(const vk::PhysicalDevice& device);
+	bool checkDeviceExtensionSupport(const vk::PhysicalDevice& device,
+		const std::vector<const char*>& requestedExtensions);
 };
