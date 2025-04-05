@@ -1,4 +1,5 @@
 #pragma once
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <string>
 #include <vulkan/vulkan.hpp>
@@ -22,10 +23,19 @@ private:
 	int numFrames;
 	GLFWwindow* window{ nullptr };
 	vk::Instance instance{ nullptr };
+	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
 	vk::PhysicalDevice physicalDevice{ nullptr };
 	vk::Device logicalDevice{ nullptr };
 	vk::Queue graphicsQueue{ nullptr };
-	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
+	vk::Queue presentQueue{ nullptr };
+	vk::SwapchainKHR swapchain{ nullptr };
+	std::vector<vk::Image> swapchainImages{ nullptr };
+	vk::Format swapchainFormat;
+	vk::Extent2D swapchainExtent;
+	vk::SurfaceKHR surface;
+	vk::SurfaceCapabilitiesKHR capabilities;
+	std::vector<vk::SurfaceFormatKHR> formats; 
+	std::vector<vk::PresentModeKHR> presentModes;
 	vk::DispatchLoaderDynamic dynamicloader;
 	std::string title{ "VulkanDemo" };
 	double lastTime;
@@ -36,6 +46,7 @@ private:
 	void createValidation();
 	void choosePhysicalDevice();
 	void createLogicalDevice();
+	void createSwapChain();
 private:
 	void calculateFrameRate();
 	bool checkValidationLayerSupport(const std::vector<const char*>& validationLayers);

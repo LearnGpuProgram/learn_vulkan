@@ -20,6 +20,7 @@ Application::Application()
 	createValidation();
 	choosePhysicalDevice();
 	createLogicalDevice();
+	createSwapChain();
 }
 
 void Application::createWindow()
@@ -352,6 +353,10 @@ void Application::createLogicalDevice()
 
 	vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures();
 
+	std::vector<const char*> deviceExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
 	std::vector<const char*> enabledLayers;
 #ifdef DEBUG_MODE
 		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
@@ -360,7 +365,7 @@ void Application::createLogicalDevice()
 		vk::DeviceCreateFlags(),
 		1, &queueCreateInfo,
 		enabledLayers.size(), enabledLayers.data(),
-		0, nullptr,
+		deviceExtensions.size(), deviceExtensions.data(),
 		&deviceFeatures
 	);
 
@@ -368,6 +373,7 @@ void Application::createLogicalDevice()
 	{
 		logicalDevice = physicalDevice.createDevice(deviceInfo);
 		graphicsQueue = logicalDevice.getQueue(indices.graphicsFamily.value(), 0);
+		presentQueue = logicalDevice.getQueue(indices.presentFamily.value(), 0),
 #ifdef DEBUG_MODE
 		std::cout << "GPU has been successfully abstracted!\n";
 #endif
@@ -380,6 +386,373 @@ void Application::createLogicalDevice()
 		logicalDevice = nullptr;
 		graphicsQueue = nullptr;
 	}
+}
+
+static std::vector<std::string> getTransformBits(vk::SurfaceTransformFlagsKHR bits)
+{
+	std::vector<std::string> result;
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eIdentity) {
+		result.push_back("identity");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eRotate90) {
+		result.push_back("90 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eRotate180) {
+		result.push_back("180 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eRotate270) {
+		result.push_back("270 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eHorizontalMirror) {
+		result.push_back("horizontal mirror");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate90) {
+		result.push_back("horizontal mirror, then 90 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate180) {
+		result.push_back("horizontal mirror, then 180 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate270) {
+		result.push_back("horizontal mirror, then 270 degree rotation");
+	}
+	if (bits & vk::SurfaceTransformFlagBitsKHR::eInherit) {
+		result.push_back("inherited");
+	}
+
+	return result;
+}
+
+static std::vector<std::string> getAlphaCompositeBits(vk::CompositeAlphaFlagsKHR bits) 
+{
+	std::vector<std::string> result;
+
+	if (bits & vk::CompositeAlphaFlagBitsKHR::eOpaque) 
+	{
+		result.push_back("opaque (alpha ignored)");
+	}
+	if (bits & vk::CompositeAlphaFlagBitsKHR::ePreMultiplied)
+	{
+		result.push_back("pre multiplied (alpha expected to already be multiplied in image)");
+	}
+	if (bits & vk::CompositeAlphaFlagBitsKHR::ePostMultiplied)
+	{
+		result.push_back("post multiplied (alpha will be applied during composition)");
+	}
+	if (bits & vk::CompositeAlphaFlagBitsKHR::eInherit)
+	{
+		result.push_back("inherited");
+	}
+
+	return result;
+}
+
+static std::vector<std::string> getImageUsageBits(vk::ImageUsageFlags bits) 
+{
+	std::vector<std::string> result;
+
+	if (bits & vk::ImageUsageFlagBits::eTransferSrc)
+	{
+		result.push_back("transfer src: image can be used as the source of a transfer command.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eTransferDst)
+	{
+		result.push_back("transfer dst: image can be used as the destination of a transfer command.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eSampled)
+	{
+		result.push_back("sampled: image can be used to create a VkImageView suitable for occupying a \
+VkDescriptorSet slot either of type VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE or \
+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, and be sampled by a shader.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eStorage)
+	{
+		result.push_back("storage: image can be used to create a VkImageView suitable for occupying a \
+VkDescriptorSet slot of type VK_DESCRIPTOR_TYPE_STORAGE_IMAGE.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eColorAttachment)
+	{
+		result.push_back("color attachment: image can be used to create a VkImageView suitable for use as \
+a color or resolve attachment in a VkFramebuffer.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eDepthStencilAttachment) 
+	{
+		result.push_back("depth/stencil attachment: image can be used to create a VkImageView \
+suitable for use as a depth/stencil or depth/stencil resolve attachment in a VkFramebuffer.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eTransientAttachment) 
+	{
+		result.push_back("transient attachment: implementations may support using memory allocations \
+with the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to back an image with this usage. This \
+bit can be set for any image that can be used to create a VkImageView suitable for use as \
+a color, resolve, depth/stencil, or input attachment.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eInputAttachment)
+	{
+		result.push_back("input attachment: image can be used to create a VkImageView suitable for \
+occupying VkDescriptorSet slot of type VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT; be read from \
+a shader as an input attachment; and be used as an input attachment in a framebuffer.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eFragmentDensityMapEXT)
+	{
+		result.push_back("fragment density map: image can be used to create a VkImageView suitable \
+for use as a fragment density map image.");
+	}
+	if (bits & vk::ImageUsageFlagBits::eFragmentShadingRateAttachmentKHR)
+	{
+		result.push_back("fragment shading rate attachment: image can be used to create a VkImageView \
+suitable for use as a fragment shading rate attachment or shading rate image");
+	}
+	return result;
+}
+
+static std::string getPresentMode(vk::PresentModeKHR presentMode) 
+{
+	if (presentMode == vk::PresentModeKHR::eImmediate) 
+	{
+		return "immediate: the presentation engine does not wait for a vertical blanking period \
+to update the current image, meaning this mode may result in visible tearing. No internal \
+queuing of presentation requests is needed, as the requests are applied immediately.";
+	}
+	if (presentMode == vk::PresentModeKHR::eMailbox)
+	{
+		return "mailbox: the presentation engine waits for the next vertical blanking period \
+to update the current image. Tearing cannot be observed. An internal single-entry queue is \
+used to hold pending presentation requests. If the queue is full when a new presentation \
+request is received, the new request replaces the existing entry, and any images associated \
+with the prior entry become available for re-use by the application. One request is removed \
+from the queue and processed during each vertical blanking period in which the queue is non-empty.";
+	}
+	if (presentMode == vk::PresentModeKHR::eFifo)
+	{
+		return "fifo: the presentation engine waits for the next vertical blanking \
+period to update the current image. Tearing cannot be observed. An internal queue is used to \
+hold pending presentation requests. New requests are appended to the end of the queue, and one \
+request is removed from the beginning of the queue and processed during each vertical blanking \
+period in which the queue is non-empty. This is the only value of presentMode that is required \
+to be supported.";
+	}
+	if (presentMode == vk::PresentModeKHR::eFifoRelaxed) 
+	{
+		return "relaxed fifo: the presentation engine generally waits for the next vertical \
+blanking period to update the current image. If a vertical blanking period has already passed \
+since the last update of the current image then the presentation engine does not wait for \
+another vertical blanking period for the update, meaning this mode may result in visible tearing \
+in this case. This mode is useful for reducing visual stutter with an application that will \
+mostly present a new image before the next vertical blanking period, but may occasionally be \
+late, and present a new image just after the next vertical blanking period. An internal queue \
+is used to hold pending presentation requests. New requests are appended to the end of the queue, \
+and one request is removed from the beginning of the queue and processed during or after each \
+vertical blanking period in which the queue is non-empty.";
+	}
+	if (presentMode == vk::PresentModeKHR::eSharedDemandRefresh)
+	{
+		return "shared demand refresh: the presentation engine and application have \
+concurrent access to a single image, which is referred to as a shared presentable image. \
+The presentation engine is only required to update the current image after a new presentation \
+request is received. Therefore the application must make a presentation request whenever an \
+update is required. However, the presentation engine may update the current image at any point, \
+meaning this mode may result in visible tearing.";
+	}
+	if (presentMode == vk::PresentModeKHR::eSharedContinuousRefresh)
+	{
+		return "shared continuous refresh: the presentation engine and application have \
+concurrent access to a single image, which is referred to as a shared presentable image. The \
+presentation engine periodically updates the current image on its regular refresh cycle. The \
+application is only required to make one initial presentation request, after which the \
+presentation engine must update the current image without any need for further presentation \
+requests. The application can indicate the image contents have been updated by making a \
+presentation request, but this does not guarantee the timing of when it will be updated. \
+This mode may result in visible tearing if rendering to the image is not timed correctly.";
+	}
+	return "none/undefined";
+}
+
+static vk::SurfaceFormatKHR chooseSwapchainSurfaceFormat(std::vector<vk::SurfaceFormatKHR> formats) 
+{
+	for (vk::SurfaceFormatKHR format : formats)
+	{
+		if (format.format == vk::Format::eB8G8R8A8Unorm
+			&& format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+		{
+			return format;
+		}
+	}
+	return formats[0];
+}
+
+static vk::PresentModeKHR chooseSwapchainPresentMode(std::vector<vk::PresentModeKHR> presentModes) 
+{
+	for (vk::PresentModeKHR presentMode : presentModes) 
+	{
+		if (presentMode == vk::PresentModeKHR::eMailbox)
+		{
+			return presentMode;
+		}
+	}
+	return vk::PresentModeKHR::eFifo;
+}
+
+static vk::Extent2D chooseSwapchainExtent(uint32_t width, uint32_t height, vk::SurfaceCapabilitiesKHR capabilities) 
+{
+	if (capabilities.currentExtent.width != UINT32_MAX)
+	{
+		return capabilities.currentExtent;
+	}
+	else
+	{
+		vk::Extent2D extent = { width, height };
+
+		extent.width = std::min(
+			capabilities.maxImageExtent.width,
+			std::max(capabilities.minImageExtent.width, extent.width)
+		);
+
+		extent.height = std::min(
+			capabilities.maxImageExtent.height,
+			std::max(capabilities.minImageExtent.height, extent.height)
+		);
+
+		return extent;
+	}
+}
+
+void Application::createSwapChain()
+{
+	VkSurfaceKHR csurface;
+	if (glfwCreateWindowSurface(instance, window, nullptr, &csurface) != VK_SUCCESS)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to abstract glfw surface for Vulkan\n";
+#endif // DEBUG_MODE
+
+	}
+	else
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Successfully abstracted glfw surface for Vulkan\n";
+#endif // DEBUG_MODE
+	}
+
+	surface = csurface;
+
+	capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
+#ifdef DEBUG_MODE
+	std::cout << "Swapchain can support the following surface capabilities:\n";
+
+	std::cout << "\tminimum image count: " << capabilities.minImageCount << '\n';
+	std::cout << "\tmaximum image count: " << capabilities.maxImageCount << '\n';
+
+	std::cout << "\tcurrent extent: \n";
+
+	std::cout << "\t\twidth: " << capabilities.currentExtent.width << '\n';
+	std::cout << "\t\theight: " << capabilities.currentExtent.height << '\n';
+
+	std::cout << "\tminimum supported extent: \n";
+	std::cout << "\t\twidth: " << capabilities.minImageExtent.width << '\n';
+	std::cout << "\t\theight: " << capabilities.minImageExtent.height << '\n';
+
+	std::cout << "\tmaximum supported extent: \n";
+	std::cout << "\t\twidth: " << capabilities.maxImageExtent.width << '\n';
+	std::cout << "\t\theight: " << capabilities.maxImageExtent.height << '\n';
+
+	std::cout << "\tmaximum image array layers: " << capabilities.maxImageArrayLayers << '\n';
+
+	std::cout << "\tsupported transforms:\n";
+	std::vector<std::string> stringList = getTransformBits(capabilities.supportedTransforms);
+	for (std::string line : stringList) {
+		std::cout << "\t\t" << line << '\n';
+	}
+
+	std::cout << "\tcurrent transform:\n";
+	stringList = getTransformBits(capabilities.currentTransform);
+	for (std::string line : stringList) {
+		std::cout << "\t\t" << line << '\n';
+	}
+
+	std::cout << "\tsupported alpha operations:\n";
+	stringList = getAlphaCompositeBits(capabilities.supportedCompositeAlpha);
+	for (std::string line : stringList) {
+		std::cout << "\t\t" << line << '\n';
+	}
+
+	std::cout << "\tsupported image usage:\n";
+	stringList = getImageUsageBits(capabilities.supportedUsageFlags);
+	for (std::string line : stringList) {
+		std::cout << "\t\t" << line << '\n';
+	}
+#endif // DEBUG_MODE
+
+	formats = physicalDevice.getSurfaceFormatsKHR(surface);
+
+#ifdef DEBUG_MODE
+	for (vk::SurfaceFormatKHR supportedFormat : formats) {
+		std::cout << "supported pixel format: " << vk::to_string(supportedFormat.format) << '\n';
+		std::cout << "supported color space: " << vk::to_string(supportedFormat.colorSpace) << '\n';
+	}
+#endif 
+
+	presentModes = physicalDevice.getSurfacePresentModesKHR(surface);
+#ifdef DEBUG_MODE
+	for (vk::PresentModeKHR presentMode : presentModes) {
+		std::cout << '\t' << getPresentMode(presentMode) << '\n';
+	}
+#endif 
+
+	vk::SurfaceFormatKHR format = chooseSwapchainSurfaceFormat(formats);
+
+	vk::PresentModeKHR presentMode = chooseSwapchainPresentMode(presentModes);
+
+	vk::Extent2D extent = chooseSwapchainExtent(width, height, capabilities);
+
+	uint32_t imageCount = std::min(
+		capabilities.maxImageCount,
+		capabilities.minImageCount + 1
+	);
+
+	vk::SwapchainCreateInfoKHR createInfo = vk::SwapchainCreateInfoKHR(
+		vk::SwapchainCreateFlagsKHR(), surface, imageCount, format.format, format.colorSpace,
+		extent, 1, vk::ImageUsageFlagBits::eColorAttachment
+	);
+
+	QueueFamilyIndices indices;
+	findQueueFamilies(physicalDevice, indices);
+
+	if (physicalDevice.getSurfaceSupportKHR(indices.presentFamily.value(), surface)) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Queue Family " << indices.presentFamily.value() << " is suitable for presenting\n";
+#endif
+	}
+
+	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+
+	if (indices.graphicsFamily != indices.presentFamily) 
+	{
+		createInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+		createInfo.queueFamilyIndexCount = 2;
+		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+	}
+	else {
+		createInfo.imageSharingMode = vk::SharingMode::eExclusive;
+	}
+
+	createInfo.preTransform = capabilities.currentTransform;
+	createInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+	createInfo.presentMode = presentMode;
+	createInfo.clipped = VK_TRUE;
+	createInfo.oldSwapchain = vk::SwapchainKHR(nullptr);
+
+	try
+	{
+		swapchain = logicalDevice.createSwapchainKHR(createInfo);
+	}
+	catch (vk::SystemError err)
+	{
+		throw std::runtime_error("Failed to create swap chain!");
+	}
+	swapchainImages = logicalDevice.getSwapchainImagesKHR(swapchain);
+	swapchainFormat = format.format;
+	swapchainExtent = extent;
 }
 
 void Application::update()
@@ -427,8 +800,10 @@ Application::~Application()
 	std::cout << "Destroy a graphics Application!\n";
 #endif 
 
+	logicalDevice.destroySwapchainKHR(swapchain);
 	logicalDevice.destroy();
 
+	instance.destroySurfaceKHR(surface);
 #ifdef DEBUG_MODE
 	instance.destroyDebugUtilsMessengerEXT(debugMessenger, nullptr, dynamicloader);
 #endif
