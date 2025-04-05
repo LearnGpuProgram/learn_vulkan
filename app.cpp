@@ -6,7 +6,41 @@
 #include <vector>
 #include <set>
 #include <optional>
+#include <fstream>
+#include <filesystem>
 
+
+#if defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+std::string getExecutablePath() {
+	char path[MAX_PATH];
+	GetModuleFileNameA(NULL, path, MAX_PATH);
+	return std::string(path);
+}
+#elif defined(__linux__)
+#include <unistd.h>
+#include <limits.h>
+std::string getExecutablePath() {
+	char path[PATH_MAX];
+	ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
+	return std::string(path, (count > 0) ? count : 0);
+}
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+std::string getExecutablePath() {
+	char path[PATH_MAX];
+	uint32_t size = sizeof(path);
+	if (_NSGetExecutablePath(path, &size) == 0) {
+		return std::string(path);
+	}
+	return "";
+}
+#endif
+
+static std::filesystem::path getExecutableDir() {
+	return std::filesystem::path(getExecutablePath()).parent_path();
+}
 
 Application::Application()
 {
@@ -21,6 +55,7 @@ Application::Application()
 	choosePhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
+	createPipeline();
 }
 
 void Application::createWindow()
@@ -61,7 +96,7 @@ void Application::createInstance()
 		<< '\n';
 #endif 
 
-    //为了兼容性和稳定性，我们可以降低版本，以适应更多硬件，降低版本有两种方法，这里都列出来
+	//为了兼容性和稳定性，我们可以降低版本，以适应更多硬件，降低版本有两种方法，这里都列出来
 	version &= ~(0xFFFFU);
 
 	version = VK_MAKE_API_VERSION(0, 1, 0, 0);
@@ -71,9 +106,9 @@ void Application::createInstance()
 		version
 	);
 
-    //Vulkan 的所有功能都是“可选启用”的，因此我们需要查询 GLFW 需要哪些扩展, 以便与 Vulkan 进行交互。
+	//Vulkan 的所有功能都是“可选启用”的，因此我们需要查询 GLFW 需要哪些扩展, 以便与 Vulkan 进行交互。
 	uint32_t glfwExtensionCount = 0;
-	const char** glfwExtensions; 
+	const char** glfwExtensions;
 	glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 	std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
@@ -155,7 +190,7 @@ void Application::createValidation()
 
 	debugMessenger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr, dynamicloader);
 
-	if(!debugMessenger)
+	if (!debugMessenger)
 	{
 		std::cerr << "Failed to create Debug Utils Messenger!" << std::endl;
 	}
@@ -228,7 +263,7 @@ bool Application::checkDeviceExtensionSupport(const vk::PhysicalDevice& device,
 	for (vk::ExtensionProperties& extension : device.enumerateDeviceExtensionProperties()) {
 
 #ifdef DEBUG_MODE
-			std::cout << "\t\"" << extension.extensionName << "\"\n";
+		std::cout << "\t\"" << extension.extensionName << "\"\n";
 #endif // DEBUG_MODE
 
 		requiredExtensions.erase(extension.extensionName);
@@ -240,7 +275,7 @@ bool Application::checkDeviceExtensionSupport(const vk::PhysicalDevice& device,
 bool Application::checkDeviceSuitable(const vk::PhysicalDevice& device)
 {
 #ifdef DEBUG_MODE
-		std::cout << "Checking if device is suitable\n";
+	std::cout << "Checking if device is suitable\n";
 #endif // DEBUG_MODE
 
 	const std::vector<const char*> requestedExtensions = {
@@ -248,23 +283,23 @@ bool Application::checkDeviceSuitable(const vk::PhysicalDevice& device)
 	};
 
 #ifdef DEBUG_MODE
-		std::cout << "We are requesting device extensions:\n";
+	std::cout << "We are requesting device extensions:\n";
 
-		for (const char* extension : requestedExtensions) {
-			std::cout << "\t\"" << extension << "\"\n";
-		}
+	for (const char* extension : requestedExtensions) {
+		std::cout << "\t\"" << extension << "\"\n";
+	}
 #endif 
 
 	if (bool extensionsSupported = checkDeviceExtensionSupport(device, requestedExtensions)) {
 
 #ifdef DEBUG_MODE
-			std::cout << "Device can support the requested extensions!\n";
+		std::cout << "Device can support the requested extensions!\n";
 #endif 
 	}
-	else 
+	else
 	{
 #ifdef DEBUG_MODE
-			std::cout << "Device can't support the requested extensions!\n";
+		std::cout << "Device can't support the requested extensions!\n";
 #endif 
 
 		return false;
@@ -359,7 +394,7 @@ void Application::createLogicalDevice()
 
 	std::vector<const char*> enabledLayers;
 #ifdef DEBUG_MODE
-		enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
+	enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
 	vk::DeviceCreateInfo deviceInfo = vk::DeviceCreateInfo(
 		vk::DeviceCreateFlags(),
@@ -369,16 +404,16 @@ void Application::createLogicalDevice()
 		&deviceFeatures
 	);
 
-	try 
+	try
 	{
 		logicalDevice = physicalDevice.createDevice(deviceInfo);
 		graphicsQueue = logicalDevice.getQueue(indices.graphicsFamily.value(), 0);
 		presentQueue = logicalDevice.getQueue(indices.presentFamily.value(), 0),
 #ifdef DEBUG_MODE
-		std::cout << "GPU has been successfully abstracted!\n";
+			std::cout << "GPU has been successfully abstracted!\n";
 #endif
 	}
-	catch (vk::SystemError err) 
+	catch (vk::SystemError err)
 	{
 #ifdef DEBUG_MODE
 		std::cout << "Device creation failed!\n";
@@ -422,11 +457,11 @@ static std::vector<std::string> getTransformBits(vk::SurfaceTransformFlagsKHR bi
 	return result;
 }
 
-static std::vector<std::string> getAlphaCompositeBits(vk::CompositeAlphaFlagsKHR bits) 
+static std::vector<std::string> getAlphaCompositeBits(vk::CompositeAlphaFlagsKHR bits)
 {
 	std::vector<std::string> result;
 
-	if (bits & vk::CompositeAlphaFlagBitsKHR::eOpaque) 
+	if (bits & vk::CompositeAlphaFlagBitsKHR::eOpaque)
 	{
 		result.push_back("opaque (alpha ignored)");
 	}
@@ -446,7 +481,7 @@ static std::vector<std::string> getAlphaCompositeBits(vk::CompositeAlphaFlagsKHR
 	return result;
 }
 
-static std::vector<std::string> getImageUsageBits(vk::ImageUsageFlags bits) 
+static std::vector<std::string> getImageUsageBits(vk::ImageUsageFlags bits)
 {
 	std::vector<std::string> result;
 
@@ -474,12 +509,12 @@ VkDescriptorSet slot of type VK_DESCRIPTOR_TYPE_STORAGE_IMAGE.");
 		result.push_back("color attachment: image can be used to create a VkImageView suitable for use as \
 a color or resolve attachment in a VkFramebuffer.");
 	}
-	if (bits & vk::ImageUsageFlagBits::eDepthStencilAttachment) 
+	if (bits & vk::ImageUsageFlagBits::eDepthStencilAttachment)
 	{
 		result.push_back("depth/stencil attachment: image can be used to create a VkImageView \
 suitable for use as a depth/stencil or depth/stencil resolve attachment in a VkFramebuffer.");
 	}
-	if (bits & vk::ImageUsageFlagBits::eTransientAttachment) 
+	if (bits & vk::ImageUsageFlagBits::eTransientAttachment)
 	{
 		result.push_back("transient attachment: implementations may support using memory allocations \
 with the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to back an image with this usage. This \
@@ -505,9 +540,9 @@ suitable for use as a fragment shading rate attachment or shading rate image");
 	return result;
 }
 
-static std::string getPresentMode(vk::PresentModeKHR presentMode) 
+static std::string getPresentMode(vk::PresentModeKHR presentMode)
 {
-	if (presentMode == vk::PresentModeKHR::eImmediate) 
+	if (presentMode == vk::PresentModeKHR::eImmediate)
 	{
 		return "immediate: the presentation engine does not wait for a vertical blanking period \
 to update the current image, meaning this mode may result in visible tearing. No internal \
@@ -531,7 +566,7 @@ request is removed from the beginning of the queue and processed during each ver
 period in which the queue is non-empty. This is the only value of presentMode that is required \
 to be supported.";
 	}
-	if (presentMode == vk::PresentModeKHR::eFifoRelaxed) 
+	if (presentMode == vk::PresentModeKHR::eFifoRelaxed)
 	{
 		return "relaxed fifo: the presentation engine generally waits for the next vertical \
 blanking period to update the current image. If a vertical blanking period has already passed \
@@ -567,7 +602,7 @@ This mode may result in visible tearing if rendering to the image is not timed c
 	return "none/undefined";
 }
 
-static vk::SurfaceFormatKHR chooseSwapchainSurfaceFormat(std::vector<vk::SurfaceFormatKHR> formats) 
+static vk::SurfaceFormatKHR chooseSwapchainSurfaceFormat(std::vector<vk::SurfaceFormatKHR> formats)
 {
 	for (vk::SurfaceFormatKHR format : formats)
 	{
@@ -580,9 +615,9 @@ static vk::SurfaceFormatKHR chooseSwapchainSurfaceFormat(std::vector<vk::Surface
 	return formats[0];
 }
 
-static vk::PresentModeKHR chooseSwapchainPresentMode(std::vector<vk::PresentModeKHR> presentModes) 
+static vk::PresentModeKHR chooseSwapchainPresentMode(std::vector<vk::PresentModeKHR> presentModes)
 {
-	for (vk::PresentModeKHR presentMode : presentModes) 
+	for (vk::PresentModeKHR presentMode : presentModes)
 	{
 		if (presentMode == vk::PresentModeKHR::eMailbox)
 		{
@@ -592,7 +627,7 @@ static vk::PresentModeKHR chooseSwapchainPresentMode(std::vector<vk::PresentMode
 	return vk::PresentModeKHR::eFifo;
 }
 
-static vk::Extent2D chooseSwapchainExtent(uint32_t width, uint32_t height, vk::SurfaceCapabilitiesKHR capabilities) 
+static vk::Extent2D chooseSwapchainExtent(uint32_t width, uint32_t height, vk::SurfaceCapabilitiesKHR capabilities)
 {
 	if (capabilities.currentExtent.width != UINT32_MAX)
 	{
@@ -717,7 +752,7 @@ void Application::createSwapChain()
 	QueueFamilyIndices indices;
 	findQueueFamilies(physicalDevice, indices);
 
-	if (physicalDevice.getSurfaceSupportKHR(indices.presentFamily.value(), surface)) 
+	if (physicalDevice.getSurfaceSupportKHR(indices.presentFamily.value(), surface))
 	{
 #ifdef DEBUG_MODE
 		std::cout << "Queue Family " << indices.presentFamily.value() << " is suitable for presenting\n";
@@ -726,7 +761,7 @@ void Application::createSwapChain()
 
 	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
-	if (indices.graphicsFamily != indices.presentFamily) 
+	if (indices.graphicsFamily != indices.presentFamily)
 	{
 		createInfo.imageSharingMode = vk::SharingMode::eConcurrent;
 		createInfo.queueFamilyIndexCount = 2;
@@ -753,6 +788,282 @@ void Application::createSwapChain()
 	swapchainImages = logicalDevice.getSwapchainImagesKHR(swapchain);
 	swapchainFormat = format.format;
 	swapchainExtent = extent;
+
+	swapchainFrames.resize(swapchainImages.size());
+
+	for (size_t i = 0; i < swapchainImages.size(); ++i)
+	{
+		vk::ImageViewCreateInfo createInfo = {};
+		createInfo.image = swapchainImages[i];
+		createInfo.viewType = vk::ImageViewType::e2D;
+		createInfo.format = format.format;
+		createInfo.components.r = vk::ComponentSwizzle::eIdentity;
+		createInfo.components.g = vk::ComponentSwizzle::eIdentity;
+		createInfo.components.b = vk::ComponentSwizzle::eIdentity;
+		createInfo.components.a = vk::ComponentSwizzle::eIdentity;
+		createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+		createInfo.subresourceRange.baseMipLevel = 0;
+		createInfo.subresourceRange.levelCount = 1;
+		createInfo.subresourceRange.baseArrayLayer = 0;
+		createInfo.subresourceRange.layerCount = 1;
+
+		swapchainFrames[i] = logicalDevice.createImageView(createInfo);
+	}
+}
+
+static std::vector<char> readFile(std::string filename)
+{
+	auto path = getExecutableDir();
+	std::ifstream file(path.string() + "/" + filename, std::ios::ate | std::ios::binary);
+
+#ifdef DEBUG_MODE
+	if (!file.is_open())
+	{
+		std::cout << "Failed to load \"" << filename << "\"" << std::endl;
+	}
+#endif
+
+	size_t filesize{ static_cast<size_t>(file.tellg()) };
+
+	std::vector<char> buffer(filesize);
+	file.seekg(0);
+	file.read(buffer.data(), filesize);
+
+	file.close();
+	return buffer;
+}
+
+vk::ShaderModule Application::createModule(std::string filename)
+{
+	std::vector<char> sourceCode = readFile(filename);
+	vk::ShaderModuleCreateInfo moduleInfo = {};
+	moduleInfo.flags = vk::ShaderModuleCreateFlags();
+	moduleInfo.codeSize = sourceCode.size();
+	moduleInfo.pCode = reinterpret_cast<const uint32_t*>(sourceCode.data());
+
+	try {
+		return logicalDevice.createShaderModule(moduleInfo);
+	}
+	catch (vk::SystemError err)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create shader module for \"" << filename << "\"" << std::endl;
+#endif
+	}
+}
+
+
+std::string Application::getVertexFilepath()
+{
+	return "media/shaders/vertex.spv";
+}
+
+std::string Application::getFragmentFilepath()
+{
+	return "media/shaders/fragment.spv";
+}
+
+void Application::makePipelineLayout()
+{
+#ifdef DEBUG_MODE
+	std::cout << "Create Pipeline Layout" << std::endl;
+#endif 
+	vk::PipelineLayoutCreateInfo layoutInfo;
+	layoutInfo.flags = vk::PipelineLayoutCreateFlags();
+	layoutInfo.setLayoutCount = 0;
+	layoutInfo.pushConstantRangeCount = 0;
+	try
+	{
+		pipelineLayout = logicalDevice.createPipelineLayout(layoutInfo);
+	}
+	catch (vk::SystemError err)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create pipeline layout!" << std::endl;
+#endif 
+	}
+}
+
+void Application::makeRenderpass()
+{
+#ifdef DEBUG_MODE
+	std::cout << "Create RenderPass" << std::endl;
+#endif
+	//Define a general attachment, with its load/store operations
+	vk::AttachmentDescription colorAttachment = {};
+	colorAttachment.flags = vk::AttachmentDescriptionFlags();
+	colorAttachment.format = swapchainFormat;
+	colorAttachment.samples = vk::SampleCountFlagBits::e1;
+	colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+	colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+	colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+	colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+	colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
+	colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
+	//Declare that attachment to be color buffer 0 of the framebuffer
+	vk::AttachmentReference colorAttachmentRef = {};
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+	//Renderpasses are broken down into subpasses, there's always at least one.
+	vk::SubpassDescription subpass = {};
+	subpass.flags = vk::SubpassDescriptionFlags();
+	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+
+	//Now create the renderpass
+	vk::RenderPassCreateInfo renderpassInfo = {};
+	renderpassInfo.flags = vk::RenderPassCreateFlags();
+	renderpassInfo.attachmentCount = 1;
+	renderpassInfo.pAttachments = &colorAttachment;
+	renderpassInfo.subpassCount = 1;
+	renderpassInfo.pSubpasses = &subpass;
+	try
+	{
+		renderpass = logicalDevice.createRenderPass(renderpassInfo);
+	}
+	catch (vk::SystemError err)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create renderpass!" << std::endl;
+#endif
+	}
+}
+
+void Application::createPipeline()
+{
+	vk::GraphicsPipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.flags = vk::PipelineCreateFlags();
+
+	//Shader stages, to be populated later
+	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+
+	//Vertex Input
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = {};
+	vertexInputInfo.flags = vk::PipelineVertexInputStateCreateFlags();
+	vertexInputInfo.vertexBindingDescriptionCount = 0;
+	vertexInputInfo.vertexAttributeDescriptionCount = 0;
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+
+	//Input Assembly
+	vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo = {};
+	inputAssemblyInfo.flags = vk::PipelineInputAssemblyStateCreateFlags();
+	inputAssemblyInfo.topology = vk::PrimitiveTopology::eTriangleList;
+	pipelineInfo.pInputAssemblyState = &inputAssemblyInfo;
+
+	//Vertex Shader
+#ifdef DEBUG_MODE
+	std::cout << "Create vertex shader module" << std::endl;
+#endif
+	vk::ShaderModule vertexShader = createModule(getVertexFilepath());
+	vk::PipelineShaderStageCreateInfo vertexShaderInfo = {};
+	vertexShaderInfo.flags = vk::PipelineShaderStageCreateFlags();
+	vertexShaderInfo.stage = vk::ShaderStageFlagBits::eVertex;
+	vertexShaderInfo.module = vertexShader;
+	vertexShaderInfo.pName = "main";
+	shaderStages.push_back(vertexShaderInfo);
+
+	//Viewport and Scissor
+	vk::Viewport viewport = {};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)swapchainExtent.width;
+	viewport.height = (float)swapchainExtent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vk::Rect2D scissor = {};
+	scissor.offset.x = 0.0f;
+	scissor.offset.y = 0.0f;
+	scissor.extent = swapchainExtent;
+	vk::PipelineViewportStateCreateInfo viewportState = {};
+	viewportState.flags = vk::PipelineViewportStateCreateFlags();
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+	pipelineInfo.pViewportState = &viewportState;
+
+	//Rasterizer
+	vk::PipelineRasterizationStateCreateInfo rasterizer = {};
+	rasterizer.flags = vk::PipelineRasterizationStateCreateFlags();
+	rasterizer.depthClampEnable = VK_FALSE; //discard out of bounds fragments, don't clamp them
+	rasterizer.rasterizerDiscardEnable = VK_FALSE; //This flag would disable fragment output
+	rasterizer.polygonMode = vk::PolygonMode::eFill;
+	rasterizer.lineWidth = 1.0f;
+	rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+	rasterizer.frontFace = vk::FrontFace::eClockwise;
+	rasterizer.depthBiasEnable = VK_FALSE; //Depth bias can be useful in shadow maps.
+	pipelineInfo.pRasterizationState = &rasterizer;
+
+	//Fragment Shader
+#ifdef DEBUG_MODE
+	std::cout << "Create fragment shader module" << std::endl;
+#endif
+	vk::ShaderModule fragmentShader = createModule(getFragmentFilepath());
+	vk::PipelineShaderStageCreateInfo fragmentShaderInfo = {};
+	fragmentShaderInfo.flags = vk::PipelineShaderStageCreateFlags();
+	fragmentShaderInfo.stage = vk::ShaderStageFlagBits::eFragment;
+	fragmentShaderInfo.module = fragmentShader;
+	fragmentShaderInfo.pName = "main";
+	shaderStages.push_back(fragmentShaderInfo);
+
+	//Now both shaders have been made, we can declare them to the pipeline info
+	pipelineInfo.stageCount = shaderStages.size();
+	pipelineInfo.pStages = shaderStages.data();
+
+	//Multisampling
+	vk::PipelineMultisampleStateCreateInfo multisampling = {};
+	multisampling.flags = vk::PipelineMultisampleStateCreateFlags();
+	multisampling.sampleShadingEnable = VK_FALSE;
+	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+	pipelineInfo.pMultisampleState = &multisampling;
+
+	//Color Blend
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = VK_FALSE;
+	vk::PipelineColorBlendStateCreateInfo colorBlending = {};
+	colorBlending.flags = vk::PipelineColorBlendStateCreateFlags();
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.logicOp = vk::LogicOp::eCopy;
+	colorBlending.attachmentCount = 1;
+	colorBlending.pAttachments = &colorBlendAttachment;
+	colorBlending.blendConstants[0] = 0.0f;
+	colorBlending.blendConstants[1] = 0.0f;
+	colorBlending.blendConstants[2] = 0.0f;
+	colorBlending.blendConstants[3] = 0.0f;
+	pipelineInfo.pColorBlendState = &colorBlending;
+
+	//Pipeline Layout
+	makePipelineLayout();
+	pipelineInfo.layout = pipelineLayout;
+
+	//Renderpass
+	makeRenderpass();
+	pipelineInfo.renderPass = renderpass;
+	pipelineInfo.subpass = 0;
+
+	//Extra stuff
+	pipelineInfo.basePipelineHandle = nullptr;
+
+	//Make the Pipeline
+#ifdef DEBUG_MODE
+	std::cout << "Create Graphics Pipeline" << std::endl;
+#endif
+	try {
+		pipeline = (logicalDevice.createGraphicsPipeline(nullptr, pipelineInfo)).value;
+	}
+	catch (vk::SystemError err)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create Pipeline" << std::endl;
+#endif
+	}
+
+	logicalDevice.destroyShaderModule(vertexShader);
+	logicalDevice.destroyShaderModule(fragmentShader);
 }
 
 void Application::update()
@@ -799,6 +1110,15 @@ Application::~Application()
 #ifdef DEBUG_MODE
 	std::cout << "Destroy a graphics Application!\n";
 #endif 
+
+	logicalDevice.destroyPipeline(pipeline);
+	logicalDevice.destroyPipelineLayout(pipelineLayout);
+	logicalDevice.destroyRenderPass(renderpass);
+
+	for (auto frame : swapchainFrames)
+	{
+		logicalDevice.destroyImageView(frame);
+	}
 
 	logicalDevice.destroySwapchainKHR(swapchain);
 	logicalDevice.destroy();
