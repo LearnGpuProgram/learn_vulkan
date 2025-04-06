@@ -56,6 +56,12 @@ Application::Application()
 	createLogicalDevice();
 	createSwapChain();
 	createPipeline();
+	createFramebuffer();
+	createCommandPool();
+	createCommandBuffer();
+	inFlightFence = makeFence();
+	imageAvailable = makeSemaphore();
+	renderFinished = makeSemaphore();
 }
 
 void Application::createWindow()
@@ -1066,6 +1072,183 @@ void Application::createPipeline()
 	logicalDevice.destroyShaderModule(fragmentShader);
 }
 
+void Application::createFramebuffer()
+{
+	swapchainFramebuffers.resize(swapchainFrames.size());
+	for (int i = 0; i < swapchainFrames.size(); ++i) {
+
+		std::vector<vk::ImageView> attachments = {
+			swapchainFrames[i]
+		};
+
+		vk::FramebufferCreateInfo framebufferInfo;
+		framebufferInfo.flags = vk::FramebufferCreateFlags();
+		framebufferInfo.renderPass = renderpass;
+		framebufferInfo.attachmentCount = attachments.size();
+		framebufferInfo.pAttachments = attachments.data();
+		framebufferInfo.width = swapchainExtent.width;
+		framebufferInfo.height = swapchainExtent.height;
+		framebufferInfo.layers = 1;
+
+		try {
+			swapchainFramebuffers[i] = logicalDevice.createFramebuffer(framebufferInfo);
+
+#ifdef DEBUG_MODE			
+			std::cout << "Created framebuffer for frame " << i << std::endl;
+#endif
+		}
+		catch (vk::SystemError err) 
+		{
+#ifdef DEBUG_MODE
+			std::cout << "Failed to create framebuffer for frame " << i << std::endl;
+#endif
+		}
+	}
+}
+
+void Application::createCommandPool()
+{
+	QueueFamilyIndices indices;
+	findQueueFamilies(physicalDevice, indices);
+
+	vk::CommandPoolCreateInfo poolInfo;
+	poolInfo.flags = vk::CommandPoolCreateFlags() | vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+	poolInfo.queueFamilyIndex = indices.graphicsFamily.value();
+
+	try 
+	{
+		cmdPool = logicalDevice.createCommandPool(poolInfo);
+	}
+	catch (vk::SystemError err)
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create Command Pool" << std::endl;
+		cmdPool = nullptr;
+#endif 
+	}
+}
+
+void Application::createCommandBuffer()
+{
+	vk::CommandBufferAllocateInfo allocInfo = {};
+	allocInfo.commandPool = cmdPool;
+	allocInfo.level = vk::CommandBufferLevel::ePrimary;
+	allocInfo.commandBufferCount = 1;
+
+	swapchainCmdBuffers.resize(swapchainFrames.size());
+	//Make a command buffer for each frame
+	for (int i = 0; i < swapchainFrames.size(); ++i) {
+		try {
+			swapchainCmdBuffers[i] = logicalDevice.allocateCommandBuffers(allocInfo)[0];
+#ifdef DEBUG_MODE
+				std::cout << "Allocated command buffer for frame " << i << std::endl;
+#endif
+		}
+		catch (vk::SystemError err) 
+		{
+#ifdef DEBUG_MODE
+			std::cout << "Failed to allocate command buffer for frame " << i << std::endl;
+#endif
+		}
+	}
+
+	//Make a "main" command buffer for the engine
+	try {
+		mainCmdBuffer = logicalDevice.allocateCommandBuffers(allocInfo)[0];
+
+#ifdef DEBUG_MODE
+			std::cout << "Allocated main command buffer " << std::endl;
+#endif
+	}
+	catch (vk::SystemError err) 
+	{
+
+#ifdef DEBUG_MODE
+			std::cout << "Failed to allocate main command buffer " << std::endl;
+#endif 
+		mainCmdBuffer = nullptr;
+	}
+}
+
+vk::Fence Application::makeFence()
+{
+	vk::FenceCreateInfo fenceInfo = {};
+	fenceInfo.flags = vk::FenceCreateFlags() | vk::FenceCreateFlagBits::eSignaled;
+
+	try 
+	{
+		return logicalDevice.createFence(fenceInfo);
+	}
+	catch (vk::SystemError err) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create fence " << std::endl;
+#endif
+		return nullptr;
+	}
+}
+
+vk::Semaphore Application::makeSemaphore()
+{
+	vk::SemaphoreCreateInfo semaphoreInfo = {};
+	semaphoreInfo.flags = vk::SemaphoreCreateFlags();
+
+	try {
+		return logicalDevice.createSemaphore(semaphoreInfo);
+	}
+	catch (vk::SystemError err) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to create semaphore " << std::endl;
+#endif
+		return nullptr;
+	}
+}
+
+void Application::recordDrawCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex)
+{
+	vk::CommandBufferBeginInfo beginInfo = {};
+
+	try {
+		commandBuffer.begin(beginInfo);
+	}
+	catch (vk::SystemError err) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "Failed to begin recording command buffer!" << std::endl;
+#endif 
+	}
+
+	vk::RenderPassBeginInfo renderPassInfo = {};
+	renderPassInfo.renderPass = renderpass;
+	renderPassInfo.framebuffer = swapchainFramebuffers[imageIndex];
+	renderPassInfo.renderArea.offset.x = 0;
+	renderPassInfo.renderArea.offset.y = 0;
+	renderPassInfo.renderArea.extent = swapchainExtent;
+
+	vk::ClearValue clearColor = { std::array<float, 4>{0.2f, 0.3f, 0.3f, 1.0f} };
+	renderPassInfo.clearValueCount = 1;
+	renderPassInfo.pClearValues = &clearColor;
+
+	commandBuffer.beginRenderPass(&renderPassInfo, vk::SubpassContents::eInline);
+
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+
+	commandBuffer.draw(3, 1, 0, 0);
+
+	commandBuffer.endRenderPass();
+
+	try {
+		commandBuffer.end();
+	}
+	catch (vk::SystemError err) 
+	{
+#ifdef DEBUG_MODE
+		std::cout << "failed to record command buffer!" << std::endl;
+#endif 
+	}
+}
+
 void Application::update()
 {
 
@@ -1073,7 +1256,59 @@ void Application::update()
 
 void Application::render()
 {
+	//等待上一次提交的GPU命令执行完成
+	logicalDevice.waitForFences(1, &inFlightFence, VK_TRUE, UINT64_MAX);
+	//重置，准备下一次提交
+	logicalDevice.resetFences(1, &inFlightFence);
 
+	//获取当前可用的交换链图像
+	uint32_t imageIndex{ logicalDevice.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailable, nullptr).value };
+	//重置commandbuffer
+	vk::CommandBuffer commandBuffer = swapchainCmdBuffers[imageIndex];
+	commandBuffer.reset();
+
+	//记录绘制命令
+	recordDrawCommands(commandBuffer, imageIndex);
+
+	//提交绘制命令到GPU
+	vk::SubmitInfo submitInfo = {};
+	//设置等待条件，确保图像可用后再执行绘制
+	vk::Semaphore waitSemaphores[] = { imageAvailable };
+	//在ColorAttachmentoutput阶段等
+	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;
+	submitInfo.pWaitDstStageMask = waitStages;
+
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	//设置信号条件
+	vk::Semaphore signalSemaphores[] = { renderFinished };
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	try {
+		//inFlightFence 标记这次提交完成情况，把这些提交给GPU执行
+		graphicsQueue.submit(submitInfo, inFlightFence);
+	}
+	catch (vk::SystemError err) {
+#ifdef DEBUG_MODE
+			std::cout << "failed to submit draw command buffer!" << std::endl;
+#endif 
+	}
+
+	//将图像呈现到屏幕
+	vk::PresentInfoKHR presentInfo = {};
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;//渲染完成
+	
+	vk::SwapchainKHR swapChains[] = { swapchain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+	//把图像提交给 presentQueue 呈现
+	presentQueue.presentKHR(presentInfo);
 }
 
 void Application::run()
@@ -1107,9 +1342,18 @@ void Application::calculateFrameRate()
 
 Application::~Application()
 {
+	logicalDevice.waitIdle();
 #ifdef DEBUG_MODE
 	std::cout << "Destroy a graphics Application!\n";
 #endif 
+
+	logicalDevice.destroyFence(inFlightFence);
+	logicalDevice.destroySemaphore(imageAvailable);
+	logicalDevice.destroySemaphore(renderFinished);
+
+	logicalDevice.freeCommandBuffers(cmdPool, 1, &mainCmdBuffer);
+	logicalDevice.freeCommandBuffers(cmdPool, swapchainCmdBuffers);
+	logicalDevice.destroyCommandPool(cmdPool);
 
 	logicalDevice.destroyPipeline(pipeline);
 	logicalDevice.destroyPipelineLayout(pipelineLayout);
@@ -1118,6 +1362,11 @@ Application::~Application()
 	for (auto frame : swapchainFrames)
 	{
 		logicalDevice.destroyImageView(frame);
+	}
+
+	for (auto framebuffer : swapchainFramebuffers)
+	{
+		logicalDevice.destroyFramebuffer(framebuffer);
 	}
 
 	logicalDevice.destroySwapchainKHR(swapchain);

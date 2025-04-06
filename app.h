@@ -29,6 +29,7 @@ private:
 	GLFWwindow* window{ nullptr };
 	vk::Instance instance{ nullptr };
 	vk::DebugUtilsMessengerEXT debugMessenger{ nullptr };
+	vk::DispatchLoaderDynamic dynamicloader;
 
 	vk::PhysicalDevice physicalDevice{ nullptr };
 	vk::Device logicalDevice{ nullptr };
@@ -36,20 +37,26 @@ private:
 	vk::Queue presentQueue{ nullptr };
 
 	vk::SwapchainKHR swapchain{ nullptr };
-	std::vector<vk::Image> swapchainImages{ nullptr };
 	vk::Format swapchainFormat;
 	vk::Extent2D swapchainExtent;
 	vk::SurfaceKHR surface;
 	vk::SurfaceCapabilitiesKHR capabilities;
 	std::vector<vk::SurfaceFormatKHR> formats; 
 	std::vector<vk::PresentModeKHR> presentModes;
-	vk::DispatchLoaderDynamic dynamicloader;
+	std::vector<vk::Image> swapchainImages{ nullptr };
 	std::vector<vk::ImageView> swapchainFrames;
-
+	std::vector<vk::Framebuffer> swapchainFramebuffers;
+	std::vector<vk::CommandBuffer> swapchainCmdBuffers;
 
 	vk::PipelineLayout pipelineLayout;
 	vk::RenderPass renderpass;
 	vk::Pipeline pipeline;
+
+	vk::CommandPool cmdPool;
+	vk::CommandBuffer mainCmdBuffer;
+
+	vk::Fence inFlightFence;
+	vk::Semaphore imageAvailable, renderFinished;
 
 	double lastTime;
 	double currentTime;
@@ -61,6 +68,9 @@ private:
 	void createLogicalDevice();
 	void createSwapChain();
 	void createPipeline();
+	void createFramebuffer();
+	void createCommandPool();
+	void createCommandBuffer();
 private:
 	void calculateFrameRate();
 	bool checkValidationLayerSupport(const std::vector<const char*>& validationLayers);
@@ -72,4 +82,7 @@ private:
 	vk::ShaderModule createModule(std::string filename);
 	void makePipelineLayout();
 	void makeRenderpass();
+	vk::Fence makeFence();
+	vk::Semaphore makeSemaphore();
+	void recordDrawCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
 };
