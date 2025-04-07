@@ -59,9 +59,27 @@ Application::Application()
 	createFramebuffer();
 	createCommandPool();
 	createCommandBuffer();
-	inFlightFence = makeFence();
-	imageAvailable = makeSemaphore();
-	renderFinished = makeSemaphore();
+
+	frameNumber = 0;
+	maxFramesInFlight = static_cast<int>(swapchainFrames.size());
+	inFlightFence.resize(maxFramesInFlight);
+	imageAvailable.resize(maxFramesInFlight);
+	renderFinished.resize(maxFramesInFlight);
+
+	for (auto& fence : inFlightFence)
+	{
+		fence = makeFence();
+	}
+
+	for (auto& imageSem : imageAvailable)
+	{
+		imageSem = makeSemaphore();
+	}
+
+	for (auto& renderSem : renderFinished)
+	{
+		renderSem = makeSemaphore();
+	}
 }
 
 void Application::createWindow()
@@ -1257,12 +1275,12 @@ void Application::update()
 void Application::render()
 {
 	//等待上一次提交的GPU命令执行完成
-	logicalDevice.waitForFences(1, &inFlightFence, VK_TRUE, UINT64_MAX);
+	logicalDevice.waitForFences(1, &inFlightFence[frameNumber], VK_TRUE, UINT64_MAX);
 	//重置，准备下一次提交
-	logicalDevice.resetFences(1, &inFlightFence);
+	logicalDevice.resetFences(1, &inFlightFence[frameNumber]);
 
 	//获取当前可用的交换链图像
-	uint32_t imageIndex{ logicalDevice.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailable, nullptr).value };
+	uint32_t imageIndex{ logicalDevice.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailable[frameNumber], nullptr).value};
 	//重置commandbuffer
 	vk::CommandBuffer commandBuffer = swapchainCmdBuffers[imageIndex];
 	commandBuffer.reset();
@@ -1273,7 +1291,7 @@ void Application::render()
 	//提交绘制命令到GPU
 	vk::SubmitInfo submitInfo = {};
 	//设置等待条件，确保图像可用后再执行绘制
-	vk::Semaphore waitSemaphores[] = { imageAvailable };
+	vk::Semaphore waitSemaphores[] = { imageAvailable[frameNumber]};
 	//在ColorAttachmentoutput阶段等
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 	submitInfo.waitSemaphoreCount = 1;
@@ -1284,13 +1302,13 @@ void Application::render()
 	submitInfo.pCommandBuffers = &commandBuffer;
 
 	//设置信号条件
-	vk::Semaphore signalSemaphores[] = { renderFinished };
+	vk::Semaphore signalSemaphores[] = { renderFinished[frameNumber]};
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
 	try {
 		//inFlightFence 标记这次提交完成情况，把这些提交给GPU执行
-		graphicsQueue.submit(submitInfo, inFlightFence);
+		graphicsQueue.submit(submitInfo, inFlightFence[frameNumber]);
 	}
 	catch (vk::SystemError err) {
 #ifdef DEBUG_MODE
@@ -1309,6 +1327,8 @@ void Application::render()
 	presentInfo.pImageIndices = &imageIndex;
 	//把图像提交给 presentQueue 呈现
 	presentQueue.presentKHR(presentInfo);
+
+	frameNumber = (frameNumber + 1) % maxFramesInFlight;
 }
 
 void Application::run()
@@ -1347,10 +1367,6 @@ Application::~Application()
 	std::cout << "Destroy a graphics Application!\n";
 #endif 
 
-	logicalDevice.destroyFence(inFlightFence);
-	logicalDevice.destroySemaphore(imageAvailable);
-	logicalDevice.destroySemaphore(renderFinished);
-
 	logicalDevice.freeCommandBuffers(cmdPool, 1, &mainCmdBuffer);
 	logicalDevice.freeCommandBuffers(cmdPool, swapchainCmdBuffers);
 	logicalDevice.destroyCommandPool(cmdPool);
@@ -1367,6 +1383,21 @@ Application::~Application()
 	for (auto framebuffer : swapchainFramebuffers)
 	{
 		logicalDevice.destroyFramebuffer(framebuffer);
+	}
+
+	for (auto fence : inFlightFence)
+	{
+		logicalDevice.destroyFence(fence);
+	}
+	
+	for (auto imageSem : imageAvailable)
+	{
+		logicalDevice.destroySemaphore(imageSem);
+	}
+
+	for (auto renderSem : renderFinished)
+	{
+		logicalDevice.destroySemaphore(renderSem);
 	}
 
 	logicalDevice.destroySwapchainKHR(swapchain);

@@ -47,6 +47,9 @@ private:
 	std::vector<vk::ImageView> swapchainFrames;
 	std::vector<vk::Framebuffer> swapchainFramebuffers;
 	std::vector<vk::CommandBuffer> swapchainCmdBuffers;
+	std::vector<vk::Fence> inFlightFence;
+	std::vector<vk::Semaphore> imageAvailable;
+	std::vector<vk::Semaphore> renderFinished;
 
 	vk::PipelineLayout pipelineLayout;
 	vk::RenderPass renderpass;
@@ -55,8 +58,7 @@ private:
 	vk::CommandPool cmdPool;
 	vk::CommandBuffer mainCmdBuffer;
 
-	vk::Fence inFlightFence;
-	vk::Semaphore imageAvailable, renderFinished;
+	int maxFramesInFlight, frameNumber;
 
 	double lastTime;
 	double currentTime;
