@@ -8,6 +8,7 @@
 #include <optional>
 #include <fstream>
 #include <filesystem>
+#include <filesystem>
 
 
 #if defined(_WIN32)
@@ -80,6 +81,8 @@ Application::Application()
 	{
 		renderSem = makeSemaphore();
 	}
+
+	createScene();
 }
 
 void Application::createWindow()
@@ -895,7 +898,14 @@ void Application::makePipelineLayout()
 	vk::PipelineLayoutCreateInfo layoutInfo;
 	layoutInfo.flags = vk::PipelineLayoutCreateFlags();
 	layoutInfo.setLayoutCount = 0;
-	layoutInfo.pushConstantRangeCount = 0;
+	layoutInfo.pushConstantRangeCount = 1;
+
+	vk::PushConstantRange pushConstantInfo;
+	pushConstantInfo.offset = 0; 
+	pushConstantInfo.size = sizeof(glm::mat4);
+	pushConstantInfo.stageFlags = vk::ShaderStageFlagBits::eVertex;
+	layoutInfo.pPushConstantRanges = &pushConstantInfo;
+
 	try
 	{
 		pipelineLayout = logicalDevice.createPipelineLayout(layoutInfo);
@@ -1252,7 +1262,12 @@ void Application::recordDrawCommands(vk::CommandBuffer commandBuffer, uint32_t i
 
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
 
-	commandBuffer.draw(3, 1, 0, 0);
+	for (glm::vec3 position : trianglePositions)
+	{
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
+		commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model);
+		commandBuffer.draw(3, 1, 0, 0);
+	}
 
 	commandBuffer.endRenderPass();
 
@@ -1264,6 +1279,17 @@ void Application::recordDrawCommands(vk::CommandBuffer commandBuffer, uint32_t i
 #ifdef DEBUG_MODE
 		std::cout << "failed to record command buffer!" << std::endl;
 #endif 
+	}
+}
+
+void Application::createScene()
+{
+	for (float x = -1.0f; x < 1.0f; x += 0.2f)
+	{
+		for (float y = -1.0f; y < 1.0f; y += 0.2f)
+		{
+			trianglePositions.push_back(glm::vec3(x, y, 0.0f));
+		}
 	}
 }
 

@@ -3,8 +3,16 @@
 #include <GLFW/glfw3.h>
 #include <string>
 #include <vulkan/vulkan.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 struct QueueFamilyIndices;
+
+struct ObjectData
+{
+	glm::mat4 model;
+};
+
 
 class Application
 {
@@ -19,6 +27,7 @@ protected:
 
 	virtual std::string getVertexFilepath();
 	virtual std::string getFragmentFilepath();
+	virtual void createScene();
 private:
 	int width{ 640 };
 	int height{ 480 };
@@ -59,6 +68,8 @@ private:
 	vk::CommandBuffer mainCmdBuffer;
 
 	int maxFramesInFlight, frameNumber;
+
+	std::vector<glm::vec3> trianglePositions;
 
 	double lastTime;
 	double currentTime;
